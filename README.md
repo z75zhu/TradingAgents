@@ -122,7 +122,6 @@ python scripts/verify_installation.py
 
 For **technical analysis features** (candlestick patterns, support/resistance, Fibonacci levels), install TA-Lib:
 
-**On macOS (recommended):**
 ```bash
 # Install TA-Lib system library
 brew install ta-lib
@@ -130,35 +129,6 @@ brew install ta-lib
 # Install Python wrapper
 pip install TA-Lib
 ```
-
-**On Linux (Ubuntu/Debian):**
-```bash
-# Install dependencies
-sudo apt-get update
-sudo apt-get install build-essential wget
-
-# Download and install TA-Lib
-wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-tar -xzf ta-lib-0.4.0-src.tar.gz
-cd ta-lib/
-./configure --prefix=/usr
-make
-sudo make install
-
-# Install Python wrapper
-pip install TA-Lib
-```
-
-**On Windows:**
-```bash
-# Install via conda (recommended)
-conda install -c conda-forge ta-lib
-
-# Or download pre-compiled wheel from:
-# https://www.lfd.uci.edu/~gohlke/pythonlibs/#ta-lib
-```
-
-> **Note**: `pandas-ta` is optional and requires Python 3.12+. TA-Lib provides all core technical analysis functionality including 55+ candlestick patterns, support/resistance calculations, and Fibonacci analysis.
 
 ### Required APIs
 
@@ -169,8 +139,7 @@ export FINNHUB_API_KEY=$YOUR_FINNHUB_API_KEY
 
 You will need AWS Bedrock access for all the LLM agents (using Claude models).
 ```bash
-# Configure AWS credentials (use same profile as Claude Code)
-export AWS_PROFILE=iris-aws
+# Configure AWS credentials
 export AWS_REGION=us-east-1
 ```
 

@@ -20,7 +20,7 @@ class BedrockEmbeddings:
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.aws_profile = config.get("aws_profile", "iris-aws")
+        self.aws_profile = config.get("aws_profile")
         self.aws_region = config.get("aws_region", "us-east-1")
 
         # Initialize Bedrock client

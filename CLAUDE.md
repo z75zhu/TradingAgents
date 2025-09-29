@@ -158,12 +158,12 @@ nano .env  # or your preferred editor
 ```
 
 **Required Variables:**
-- `AWS_PROFILE=iris-aws` (matches your Claude Code setup)
+- `AWS_PROFILE=your-aws-profile` (set to your AWS profile name)
 - `AWS_REGION=us-east-1`
 - `LLM_PROVIDER=bedrock`
 - `QUICK_THINK_LLM=claude-3-5-sonnet`
 - `DEEP_THINK_LLM=claude-sonnet-4`
-- `FINNHUB_API_KEY=d3adnfhr01qlsbrqvt60d3adnfhr01qlsbrqvt6g`
+- `FINNHUB_API_KEY=your-finnhub-api-key`
 
 **Optional Variables:**
 - `REDDIT_CLIENT_ID=your_client_id` (for social sentiment)
@@ -403,7 +403,7 @@ result = ta.propagate('AAPL', '2025-01-26')
 
 ### Claude Code Compatibility
 - Uses identical AWS Bedrock configuration as your Claude Code setup
-- Leverages `iris-aws` profile for seamless authentication
+- Uses configured AWS profile for seamless authentication
 - Compatible with existing AWS IAM roles and permissions
 - Maintains consistent model access patterns
 

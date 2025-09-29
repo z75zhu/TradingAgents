@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check available models in AWS Bedrock for the iris-aws profile.
+Check available models in AWS Bedrock.
 """
 
 import boto3
@@ -9,8 +9,13 @@ from botocore.exceptions import ClientError
 def list_available_models():
     """List all available foundation models in Bedrock."""
     try:
-        # Create Bedrock client with iris-aws profile
-        session = boto3.Session(profile_name="iris-aws")
+        # Create Bedrock client with configured AWS profile
+        import os
+        aws_profile = os.getenv("AWS_PROFILE")
+        if aws_profile:
+            session = boto3.Session(profile_name=aws_profile)
+        else:
+            session = boto3.Session()
         bedrock_client = session.client("bedrock", region_name="us-east-1")
 
         print("Checking available foundation models in Bedrock...")
@@ -76,6 +81,7 @@ def list_available_models():
 
 def test_specific_model(model_id):
     """Test a specific model to see if it's accessible."""
+    import os
     try:
         from langchain_aws import ChatBedrock
 
@@ -89,7 +95,7 @@ def test_specific_model(model_id):
                 "max_tokens": 100,
             },
             region_name="us-east-1",
-            credentials_profile_name="iris-aws"
+            credentials_profile_name=os.getenv("AWS_PROFILE")
         )
 
         # Test with a simple message

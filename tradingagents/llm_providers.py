@@ -173,7 +173,7 @@ def get_configured_llms(config: Dict[str, Any]) -> Tuple[ChatBedrock, ChatBedroc
     deep_model = config.get("deep_think_llm", "claude-sonnet-4")
 
     # AWS Bedrock specific configs
-    aws_profile = config.get("aws_profile", "iris-aws")
+    aws_profile = config.get("aws_profile")
     aws_region = config.get("aws_region", "us-east-1")
 
     # Model temperature settings
@@ -212,7 +212,7 @@ def get_dynamic_llms(config: Dict[str, Any]) -> Tuple[ChatBedrock, ChatBedrock, 
     Returns:
         Tuple of (quick_thinking_llm, deep_thinking_llm, model_selector)
     """
-    aws_profile = config.get("aws_profile", "iris-aws")
+    aws_profile = config.get("aws_profile")
     aws_region = config.get("aws_region", "us-east-1")
 
     # Initialize model selector

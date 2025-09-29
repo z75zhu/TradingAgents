@@ -24,13 +24,18 @@ def test_aws_credentials():
     print("=" * 60)
 
     try:
-        # Test with iris-aws profile
-        session = boto3.Session(profile_name='iris-aws')
+        # Test with configured AWS profile
+        import os
+        aws_profile = os.getenv('AWS_PROFILE')
+        if aws_profile:
+            session = boto3.Session(profile_name=aws_profile)
+        else:
+            session = boto3.Session()
         sts_client = session.client('sts', region_name='us-east-1')
 
         # Get caller identity
         identity = sts_client.get_caller_identity()
-        print(f"✅ Successfully authenticated with iris-aws profile")
+        print(f"✅ Successfully authenticated with AWS profile: {aws_profile or 'default'}")
         print(f"   Account ID: {identity['Account']}")
         print(f"   User ARN: {identity['Arn']}")
         print(f"   User ID: {identity['UserId']}")
@@ -39,7 +44,7 @@ def test_aws_credentials():
 
     except Exception as e:
         print(f"❌ AWS credential setup failed: {e}")
-        print(f"   Make sure 'iris-aws' profile is configured in ~/.aws/credentials")
+        print(f"   Make sure AWS_PROFILE environment variable is set or AWS credentials are configured")
         return False, None
 
 def test_bedrock_service_access(session):
@@ -253,7 +258,9 @@ def main():
     print("🔬 AWS BEDROCK EMBEDDINGS COMPREHENSIVE DIAGNOSTIC")
     print("=" * 60)
     print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Target Profile: iris-aws")
+    import os
+    aws_profile = os.getenv('AWS_PROFILE', 'default')
+    print(f"Target Profile: {aws_profile}")
     print(f"Target Region: us-east-1")
 
     results = {}
