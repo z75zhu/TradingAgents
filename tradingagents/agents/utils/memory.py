@@ -1,25 +1,29 @@
 import chromadb
 from chromadb.config import Settings
-from openai import OpenAI
+from ...bedrock_embeddings import BedrockEmbeddings
 
 
 class FinancialSituationMemory:
     def __init__(self, name, config):
-        if config["backend_url"] == "http://localhost:11434/v1":
-            self.embedding = "nomic-embed-text"
+        self.config = config
+
+        # Use Bedrock embeddings exclusively
+        self.bedrock_embeddings = BedrockEmbeddings(config)
+
+        # Enhanced status message with embedding method details
+        if self.bedrock_embeddings.active_model:
+            print(f"✅ Initialized Bedrock embeddings for memory: {name}")
+            print(f"   🧠 Using AWS model: {self.bedrock_embeddings.active_model}")
         else:
-            self.embedding = "text-embedding-3-small"
-        self.client = OpenAI(base_url=config["backend_url"])
+            print(f"⚠️  Initialized memory: {name} with hash-based fallback")
+            print(f"   💡 Consider checking AWS Bedrock model access for better quality")
+
         self.chroma_client = chromadb.Client(Settings(allow_reset=True))
         self.situation_collection = self.chroma_client.create_collection(name=name)
 
     def get_embedding(self, text):
-        """Get OpenAI embedding for a text"""
-        
-        response = self.client.embeddings.create(
-            model=self.embedding, input=text
-        )
-        return response.data[0].embedding
+        """Get embedding for a text using Bedrock embeddings"""
+        return self.bedrock_embeddings.get_embedding(text)
 
     def add_situations(self, situations_and_advice):
         """Add financial situations and their corresponding advice. Parameter is a list of tuples (situation, rec)"""
@@ -65,6 +69,35 @@ class FinancialSituationMemory:
             )
 
         return matched_results
+
+    def test_embedding_quality(self):
+        """Test the quality of embeddings for this memory instance."""
+        return self.bedrock_embeddings.test_embedding_quality()
+
+    def get_similarity(self, text1, text2):
+        """Calculate similarity between two texts using Bedrock embeddings."""
+        emb1 = self.get_embedding(text1)
+        emb2 = self.get_embedding(text2)
+        return self.bedrock_embeddings.cosine_similarity(emb1, emb2)
+
+    def get_embedding_status(self):
+        """Get detailed status of the embedding system."""
+        status = {
+            "provider": "AWS Bedrock",
+            "active_model": self.bedrock_embeddings.active_model or "Hash Fallback",
+            "is_neural_embeddings": self.bedrock_embeddings.active_model is not None,
+            "aws_profile": self.bedrock_embeddings.aws_profile,
+            "aws_region": self.bedrock_embeddings.aws_region,
+        }
+
+        if self.bedrock_embeddings.active_model:
+            status["status"] = "✅ AWS Bedrock embeddings active"
+            status["quality"] = "High - Neural embeddings"
+        else:
+            status["status"] = "⚠️ Using hash fallback"
+            status["quality"] = "Limited - Deterministic hash method"
+
+        return status
 
 
 if __name__ == "__main__":

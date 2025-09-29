@@ -20,13 +20,13 @@ def is_rate_limited(response):
 
 @retry(
     retry=(retry_if_result(is_rate_limited)),
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=30),  # Reduced min from 4s to 2s, max from 60s to 30s
+    stop=stop_after_attempt(2),  # Reduced from 5 to 2 attempts for real-time performance
 )
 def make_request(url, headers):
     """Make a request with retry logic for rate limiting"""
-    # Random delay before each request to avoid detection
-    time.sleep(random.uniform(2, 6))
+    # Optimized random delay for real-time performance (reduced from 2-6s to 1-3s)
+    time.sleep(random.uniform(1, 3))
     response = requests.get(url, headers=headers)
     return response
 

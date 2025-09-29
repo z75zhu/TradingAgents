@@ -6,14 +6,11 @@ import json
 from datetime import date
 from typing import Dict, Any, Tuple, List, Optional
 
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain_google_genai import ChatGoogleGenerativeAI
-
 from langgraph.prebuilt import ToolNode
 
 from tradingagents.agents import *
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.llm_providers import get_configured_llms
 from tradingagents.agents.utils.memory import FinancialSituationMemory
 from tradingagents.agents.utils.agent_states import (
     AgentState,
@@ -34,7 +31,7 @@ class TradingAgentsGraph:
 
     def __init__(
         self,
-        selected_analysts=["market", "social", "news", "fundamentals"],
+        selected_analysts=["market", "technical", "social", "news", "fundamentals"],
         debug=False,
         config: Dict[str, Any] = None,
     ):
@@ -57,19 +54,9 @@ class TradingAgentsGraph:
             exist_ok=True,
         )
 
-        # Initialize LLMs
-        if self.config["llm_provider"].lower() == "openai" or self.config["llm_provider"] == "ollama" or self.config["llm_provider"] == "openrouter":
-            self.deep_thinking_llm = ChatOpenAI(model=self.config["deep_think_llm"], base_url=self.config["backend_url"])
-            self.quick_thinking_llm = ChatOpenAI(model=self.config["quick_think_llm"], base_url=self.config["backend_url"])
-        elif self.config["llm_provider"].lower() == "anthropic":
-            self.deep_thinking_llm = ChatAnthropic(model=self.config["deep_think_llm"], base_url=self.config["backend_url"])
-            self.quick_thinking_llm = ChatAnthropic(model=self.config["quick_think_llm"], base_url=self.config["backend_url"])
-        elif self.config["llm_provider"].lower() == "google":
-            self.deep_thinking_llm = ChatGoogleGenerativeAI(model=self.config["deep_think_llm"])
-            self.quick_thinking_llm = ChatGoogleGenerativeAI(model=self.config["quick_think_llm"])
-        else:
-            raise ValueError(f"Unsupported LLM provider: {self.config['llm_provider']}")
-        
+        # Initialize Bedrock LLMs
+        self.quick_thinking_llm, self.deep_thinking_llm = get_configured_llms(self.config)
+
         self.toolkit = Toolkit(config=self.config)
 
         # Initialize memories
@@ -110,41 +97,50 @@ class TradingAgentsGraph:
         self.graph = self.graph_setup.setup_graph(selected_analysts)
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
-        """Create tool nodes for different data sources."""
+        """Create tool nodes for different data sources (Bedrock-optimized)."""
         return {
             "market": ToolNode(
                 [
-                    # online tools
+                    # Live market data tools (prioritized)
+                    self.toolkit.get_finnhub_real_time_quote,
+                    self.toolkit.get_finnhub_market_indicators,
+                    self.toolkit.get_finnhub_sector_performance,
                     self.toolkit.get_YFin_data_online,
                     self.toolkit.get_stockstats_indicators_report_online,
-                    # offline tools
+                    # Historical data tools
                     self.toolkit.get_YFin_data,
                     self.toolkit.get_stockstats_indicators_report,
                 ]
             ),
             "social": ToolNode(
                 [
-                    # online tools
-                    self.toolkit.get_stock_news_openai,
-                    # offline tools
+                    # Bedrock-optimized news analysis
+                    self.toolkit.get_stock_news_bedrock,
+                    # Social media data
                     self.toolkit.get_reddit_stock_info,
                 ]
             ),
             "news": ToolNode(
                 [
-                    # online tools
-                    self.toolkit.get_global_news_openai,
+                    # Bedrock-optimized news analysis
+                    self.toolkit.get_global_news_bedrock,
+                    # Live news sources (prioritized)
                     self.toolkit.get_google_news,
-                    # offline tools
+                    self.toolkit.get_finnhub_news_live,
+                    # Historical news data
                     self.toolkit.get_finnhub_news,
                     self.toolkit.get_reddit_news,
                 ]
             ),
             "fundamentals": ToolNode(
                 [
-                    # online tools
-                    self.toolkit.get_fundamentals_openai,
-                    # offline tools
+                    # Bedrock-optimized fundamentals analysis
+                    self.toolkit.get_fundamentals_bedrock,
+                    # Live fundamental data (prioritized)
+                    self.toolkit.get_finnhub_insider_transactions_live,
+                    self.toolkit.get_finnhub_earnings_data,
+                    self.toolkit.get_finnhub_analyst_recommendations,
+                    # Historical fundamental data
                     self.toolkit.get_finnhub_company_insider_sentiment,
                     self.toolkit.get_finnhub_company_insider_transactions,
                     self.toolkit.get_simfin_balance_sheet,
@@ -152,10 +148,28 @@ class TradingAgentsGraph:
                     self.toolkit.get_simfin_income_stmt,
                 ]
             ),
+            "technical": ToolNode(
+                [
+                    # Technical analysis ALWAYS uses live data - no offline mode
+                    # K-line patterns and technical indicators are extremely time-sensitive
+                    self.toolkit.get_technical_analysis_report_online,
+                    self.toolkit.get_candlestick_patterns_online,
+                    self.toolkit.get_support_resistance_online,
+                    self.toolkit.get_fibonacci_analysis_online,
+                    self.toolkit.get_YFin_data_online,
+                    self.toolkit.get_stockstats_indicators_report_online,
+                ]
+            ),
         }
 
-    def propagate(self, company_name, trade_date):
-        """Run the trading agents graph for a company on a specific date."""
+    def propagate(self, company_name, trade_date, initial_state=None):
+        """Run the trading agents graph for a company on a specific date.
+
+        Args:
+            company_name: The ticker symbol to analyze
+            trade_date: The date for analysis
+            initial_state: Optional dictionary to merge into the initial state
+        """
 
         self.ticker = company_name
 
@@ -163,6 +177,10 @@ class TradingAgentsGraph:
         init_agent_state = self.propagator.create_initial_state(
             company_name, trade_date
         )
+
+        # Merge any additional initial state data
+        if initial_state:
+            init_agent_state.update(initial_state)
         args = self.propagator.get_graph_args()
 
         if self.debug:
@@ -252,3 +270,4 @@ class TradingAgentsGraph:
     def process_signal(self, full_signal):
         """Process a signal to extract the core decision."""
         return self.signal_processor.process_signal(full_signal)
+

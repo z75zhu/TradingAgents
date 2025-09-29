@@ -63,7 +63,7 @@ Our framework decomposes complex trading tasks into specialized roles. This ensu
 - Fundamentals Analyst: Evaluates company financials and performance metrics, identifying intrinsic values and potential red flags.
 - Sentiment Analyst: Analyzes social media and public sentiment using sentiment scoring algorithms to gauge short-term market mood.
 - News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
-- Technical Analyst: Utilizes technical indicators (like MACD and RSI) to detect trading patterns and forecast price movements.
+- Technical Analyst: Utilizes comprehensive technical analysis including 55+ candlestick patterns (Hammer, Doji, Engulfing), support/resistance levels, Fibonacci retracements, and technical indicators (MACD, RSI, Bollinger Bands) with live market data for time-sensitive pattern detection.
 
 <p align="center">
   <img src="assets/analyst.png" width="100%" style="display: inline-block; margin: 0 2%;">
@@ -112,6 +112,54 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+**Verify installation:**
+```bash
+# Run comprehensive installation verification
+python scripts/verify_installation.py
+```
+
+### Technical Analysis Setup
+
+For **technical analysis features** (candlestick patterns, support/resistance, Fibonacci levels), install TA-Lib:
+
+**On macOS (recommended):**
+```bash
+# Install TA-Lib system library
+brew install ta-lib
+
+# Install Python wrapper
+pip install TA-Lib
+```
+
+**On Linux (Ubuntu/Debian):**
+```bash
+# Install dependencies
+sudo apt-get update
+sudo apt-get install build-essential wget
+
+# Download and install TA-Lib
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+tar -xzf ta-lib-0.4.0-src.tar.gz
+cd ta-lib/
+./configure --prefix=/usr
+make
+sudo make install
+
+# Install Python wrapper
+pip install TA-Lib
+```
+
+**On Windows:**
+```bash
+# Install via conda (recommended)
+conda install -c conda-forge ta-lib
+
+# Or download pre-compiled wheel from:
+# https://www.lfd.uci.edu/~gohlke/pythonlibs/#ta-lib
+```
+
+> **Note**: `pandas-ta` is optional and requires Python 3.12+. TA-Lib provides all core technical analysis functionality including 55+ candlestick patterns, support/resistance calculations, and Fibonacci analysis.
+
 ### Required APIs
 
 You will also need the FinnHub API for financial data. All of our code is implemented with the free tier.
@@ -119,18 +167,28 @@ You will also need the FinnHub API for financial data. All of our code is implem
 export FINNHUB_API_KEY=$YOUR_FINNHUB_API_KEY
 ```
 
-You will need the OpenAI API for all the agents.
+You will need AWS Bedrock access for all the LLM agents (using Claude models).
 ```bash
-export OPENAI_API_KEY=$YOUR_OPENAI_API_KEY
+# Configure AWS credentials (use same profile as Claude Code)
+export AWS_PROFILE=iris-aws
+export AWS_REGION=us-east-1
 ```
 
 ### CLI Usage
 
-You can also try out the CLI directly by running:
+You can also try out the CLI directly:
+
+**Analyze a single stock:**
 ```bash
-python -m cli.main
+python -m cli.main analyze AAPL
 ```
-You will see a screen where you can select your desired tickers, date, LLMs, research depth, etc.
+
+**Run batch analysis on a portfolio:**
+```bash
+python -m cli.main batch --file portfolio.json
+```
+
+The CLI provides clean command-based interface for both individual stock analysis and portfolio batch processing.
 
 <p align="center">
   <img src="assets/cli/cli_init.png" width="100%" style="display: inline-block; margin: 0 2%;">
@@ -154,7 +212,7 @@ We built TradingAgents with LangGraph to ensure flexibility and modularity. We u
 
 ### Python Usage
 
-To use TradingAgents inside your code, you can import the `tradingagents` module and initialize a `TradingAgentsGraph()` object. The `.propagate()` function will return a decision. You can run `main.py`, here's also a quick example:
+To use TradingAgents inside your code, you can import the `tradingagents` module and initialize a `TradingAgentsGraph()` object. The `.propagate()` function will return a decision. You can use the CLI commands (`python -m cli.main analyze TICKER` or `python -m cli.main batch`), here's also a quick programmatic example:
 
 ```python
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -191,6 +249,8 @@ print(decision)
 > For `online_tools`, we recommend enabling them for experimentation, as they provide access to real-time data. The agents' offline tools rely on cached data from our **Tauric TradingDB**, a curated dataset we use for backtesting. We're currently in the process of refining this dataset, and we plan to release it soon alongside our upcoming projects. Stay tuned!
 
 You can view the full list of configurations in `tradingagents/default_config.py`.
+
+For detailed technical analysis setup and usage, see [Technical Analysis Setup Guide](docs/TECHNICAL_ANALYSIS_SETUP.md).
 
 ## Contributing
 

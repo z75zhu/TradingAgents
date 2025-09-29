@@ -27,10 +27,40 @@ def create_trader(llm, memory):
             "content": f"Based on a comprehensive analysis by a team of analysts, here is an investment plan tailored for {company_name}. This plan incorporates insights from current technical market trends, macroeconomic indicators, and social media sentiment. Use this plan as a foundation for evaluating your next trading decision.\n\nProposed Investment Plan: {investment_plan}\n\nLeverage these insights to make an informed and strategic decision.",
         }
 
+        # Get portfolio context if available for position sizing
+        portfolio_context = ""
+        if "current_position" in state:
+            current_shares = state.get("current_shares", 0)
+            current_price = state.get("current_price", 0)
+            if current_shares > 0:
+                portfolio_context = f"\n\nCURRENT POSITION: You currently hold {current_shares} shares at ${current_price:.2f} per share."
+            else:
+                portfolio_context = f"\n\nNEW POSITION: No current position. Current price: ${current_price:.2f} per share."
+
         messages = [
             {
                 "role": "system",
-                "content": f"""You are a trading agent analyzing market data to make investment decisions. Based on your analysis, provide a specific recommendation to buy, sell, or hold. End with a firm decision and always conclude your response with 'FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation. Do not forget to utilize lessons from past decisions to learn from your mistakes. Here is some reflections from similar situatiosn you traded in and the lessons learned: {past_memory_str}""",
+                "content": f"""You are a trading agent analyzing market data to make investment decisions.
+
+CRITICAL: You MUST provide specific share quantities in your recommendation.
+
+Based on your analysis, provide a detailed recommendation including:
+1. Your analysis and reasoning
+2. Specific action (BUY/SELL/HOLD)
+3. EXACT number of shares or percentage of position
+
+Always end with this EXACT format:
+FINAL TRANSACTION PROPOSAL: **[BUY/SELL/HOLD] [NUMBER] SHARES**
+
+Examples:
+- FINAL TRANSACTION PROPOSAL: **BUY 25 SHARES**
+- FINAL TRANSACTION PROPOSAL: **SELL 50 SHARES**
+- FINAL TRANSACTION PROPOSAL: **SELL ALL SHARES**
+- FINAL TRANSACTION PROPOSAL: **HOLD CURRENT POSITION**
+
+{portfolio_context}
+
+Past trading lessons: {past_memory_str}""",
             },
             context,
         ]

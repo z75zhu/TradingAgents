@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 import datetime
 import typer
 from pathlib import Path
@@ -391,8 +391,20 @@ def update_display(layout, spinner_text=None):
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections():
+def get_user_selections(interactive: bool = False, use_defaults: bool = False):
     """Get all user selections before starting the analysis display."""
+    from tradingagents.env_config import get_env_config
+
+    # Get CLI configuration
+    env_config = get_env_config()
+    cli_config = env_config.get_cli_config()
+
+    # Determine mode: use defaults unless specifically requested to be interactive
+    should_use_defaults = (cli_config.get("cli_default_mode") == "auto" or use_defaults) and not interactive
+
+    if should_use_defaults:
+        console.print("[bold blue]🚀 Using default preferences - add --interactive to customize[/bold blue]\n")
+
     # Display ASCII art welcome message
     with open("./cli/static/welcome.txt", "r") as f:
         welcome_ascii = f.read()
@@ -435,50 +447,60 @@ def get_user_selections():
 
     # Step 2: Analysis date
     default_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    console.print(
-        create_question_box(
-            "Step 2: Analysis Date",
-            "Enter the analysis date (YYYY-MM-DD)",
-            default_date,
+    if should_use_defaults and cli_config.get("cli_auto_use_current_date", True):
+        analysis_date = default_date
+        console.print(f"[green]✓ Using current date: {analysis_date}[/green]")
+    else:
+        console.print(
+            create_question_box(
+                "Step 2: Analysis Date",
+                "Enter the analysis date (YYYY-MM-DD)",
+                default_date,
+            )
         )
-    )
-    analysis_date = get_analysis_date()
+        analysis_date = get_analysis_date()
 
     # Step 3: Select analysts
-    console.print(
-        create_question_box(
-            "Step 3: Analysts Team", "Select your LLM analyst agents for the analysis"
+    if should_use_defaults and cli_config.get("cli_auto_select_all_analysts", True):
+        from cli.models import AnalystType
+        selected_analysts = [analyst_type for _, analyst_type in ANALYST_ORDER]
+        console.print(
+            f"[green]✓ Using all analysts: {', '.join(analyst.value for analyst in selected_analysts)}[/green]"
         )
-    )
-    selected_analysts = select_analysts()
-    console.print(
-        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
-    )
+    else:
+        console.print(
+            create_question_box(
+                "Step 3: Analysts Team", "Select your LLM analyst agents for the analysis"
+            )
+        )
+        selected_analysts = select_analysts()
+        console.print(
+            f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+        )
 
     # Step 4: Research depth
-    console.print(
-        create_question_box(
-            "Step 4: Research Depth", "Select your research depth level"
+    if should_use_defaults:
+        depth_map = {"shallow": 1, "medium": 3, "deep": 5}
+        default_depth_name = cli_config.get("cli_default_research_depth", "deep")
+        selected_research_depth = depth_map.get(default_depth_name, 5)
+        console.print(f"[green]✓ Using research depth: {default_depth_name} ({selected_research_depth} rounds)[/green]")
+    else:
+        console.print(
+            create_question_box(
+                "Step 4: Research Depth", "Select your research depth level"
+            )
         )
-    )
-    selected_research_depth = select_research_depth()
+        selected_research_depth = select_research_depth()
 
-    # Step 5: OpenAI backend
-    console.print(
-        create_question_box(
-            "Step 5: OpenAI backend", "Select which service to talk to"
-        )
-    )
-    selected_llm_provider, backend_url = select_llm_provider()
-    
-    # Step 6: Thinking agents
-    console.print(
-        create_question_box(
-            "Step 6: Thinking Agents", "Select your thinking agents for analysis"
-        )
-    )
-    selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
-    selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
+    # Step 5: Bedrock Configuration (simplified - no provider selection needed)
+    selected_llm_provider = "bedrock"
+    backend_url = "aws-bedrock"
+    console.print(f"[green]✓ Using AWS Bedrock with Claude models[/green]")
+
+    # Step 6: Claude Model Selection (simplified for Bedrock-only)
+    selected_shallow_thinker = cli_config.get("cli_default_shallow_thinker", "claude-3-5-sonnet")
+    selected_deep_thinker = cli_config.get("cli_default_deep_thinker", "claude-sonnet-4")
+    console.print(f"[green]✓ Using Claude models: {selected_shallow_thinker} (quick), {selected_deep_thinker} (deep)[/green]")
 
     return {
         "ticker": selected_ticker,
@@ -731,9 +753,9 @@ def extract_content_string(content):
     else:
         return str(content)
 
-def run_analysis():
+def run_analysis(interactive: bool = False, use_defaults: bool = False):
     # First get all user selections
-    selections = get_user_selections()
+    selections = get_user_selections(interactive=interactive, use_defaults=use_defaults)
 
     # Create config with selected research depth
     config = DEFAULT_CONFIG.copy()
@@ -1096,9 +1118,352 @@ def run_analysis():
         update_display(layout)
 
 
-@app.command()
-def analyze():
-    run_analysis()
+@app.command("analyze")
+def analyze_ticker(
+    symbol: str = typer.Argument(help="Stock ticker symbol to analyze (e.g., AAPL, TSLA)"),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Analysis date (YYYY-MM-DD), defaults to today"
+    ),
+    fast: bool = typer.Option(
+        False,
+        "--fast",
+        "-f",
+        help="Fast mode: skip debates for quicker analysis"
+    ),
+    output: str = typer.Option(
+        "summary",
+        "--output",
+        "-o",
+        help="Output format: 'summary', 'detailed', or 'decision'"
+    )
+):
+    """Analyze a single stock ticker for trading decisions."""
+    import datetime
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    # Set analysis date
+    if date is None:
+        analysis_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    else:
+        analysis_date = date
+
+    # Create configuration for fast analysis if requested
+    config = DEFAULT_CONFIG.copy()
+    if fast:
+        config["max_debate_rounds"] = 0
+        config["max_risk_discuss_rounds"] = 0
+
+    try:
+        console.print(Panel(
+            f"[bold blue]📊 Single Ticker Analysis[/bold blue]\n"
+            f"🎯 Ticker: {symbol.upper()}\n"
+            f"📅 Date: {analysis_date}\n"
+            f"⚡ Mode: {'Fast' if fast else 'Full'} Analysis\n"
+            f"📋 Output: {output.title()}",
+            title="Ticker Analysis Starting",
+            border_style="blue"
+        ))
+
+        # Initialize trading graph
+        with console.status(f"[bold green]Analyzing {symbol.upper()}...") as status:
+            graph = TradingAgentsGraph(config=config)
+
+            status.update(f"[bold green]Running analysis for {symbol.upper()}...")
+            final_state, decision = graph.propagate(symbol.upper(), analysis_date)
+
+        # Display results based on output format
+        if output == "decision":
+            # Just the final decision
+            console.print(Panel(
+                f"[bold green]🎯 Final Decision: {decision}[/bold green]",
+                title=f"{symbol.upper()} Trading Decision",
+                border_style="green"
+            ))
+
+        elif output == "summary":
+            # Summary with key points
+            console.print(f"\n[bold cyan]📊 Analysis Summary for {symbol.upper()}[/bold cyan]\n")
+
+            # Final Decision
+            console.print(Panel(
+                f"[bold green]🎯 Final Decision: {decision}[/bold green]",
+                title="Trading Recommendation",
+                border_style="green"
+            ))
+
+            # Key Reports (if available)
+            reports = []
+            if final_state.get("market_report"):
+                reports.append(("Market Analysis", final_state["market_report"][:200] + "..."))
+            if final_state.get("sentiment_report"):
+                reports.append(("Social Sentiment", final_state["sentiment_report"][:200] + "..."))
+            if final_state.get("news_report"):
+                reports.append(("News Analysis", final_state["news_report"][:200] + "..."))
+            if final_state.get("final_trade_decision"):
+                reports.append(("Final Reasoning", final_state["final_trade_decision"][:300] + "..."))
+
+            if reports:
+                for title, content in reports:
+                    console.print(Panel(
+                        content,
+                        title=f"📋 {title}",
+                        border_style="cyan",
+                        padding=(1, 2)
+                    ))
+
+        else:  # detailed
+            # Full detailed output (same as original analyze command)
+            display_complete_report(final_state)
+
+        console.print(f"\n[green]✅ Analysis completed for {symbol.upper()} on {analysis_date}[/green]")
+
+    except Exception as e:
+        console.print(f"[red]❌ Analysis failed for {symbol.upper()}: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("batch")
+def batch_analysis(
+    portfolio_file: str = typer.Option(
+        "portfolio.json",
+        "--file",
+        "-f",
+        help="Portfolio configuration file path"
+    ),
+    trade_date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Analysis date (YYYY-MM-DD), defaults to today"
+    ),
+    output: str = typer.Option(
+        "summary",
+        "--output",
+        "-o",
+        help="Output format: 'summary' (default), 'detailed', or 'decisions'"
+    ),
+    parallel: bool = typer.Option(
+        True,
+        "--parallel/--sequential",
+        help="Run individual analyses in parallel (default: True)"
+    ),
+    max_workers: int = typer.Option(
+        4,
+        "--max-workers",
+        help="Maximum parallel workers (default: 4)"
+    )
+):
+    """Batch analysis on multiple stocks from portfolio file."""
+    import datetime
+    from tradingagents.agents.portfolio_batch import batch_analyze_portfolio
+
+    try:
+        # Set default date if not provided
+        if not trade_date:
+            trade_date = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        console.print(Panel(
+            f"[bold blue]📊 Batch Stock Analysis[/bold blue]\n"
+            f"📁 File: {portfolio_file}\n"
+            f"📅 Date: {trade_date}\n"
+            f"⚡ Workers: {max_workers}",
+            title="Batch Analysis Starting",
+            border_style="blue"
+        ))
+
+        # Initialize trading graph and run simplified batch analysis
+        from tradingagents.graph.trading_graph import TradingAgentsGraph
+        graph = TradingAgentsGraph(config=DEFAULT_CONFIG)
+
+        results = batch_analyze_portfolio(
+            graph,
+            portfolio_file=portfolio_file,
+            date=trade_date,
+            max_workers=max_workers,
+            output_format=output
+        )
+
+        console.print(f"\n[bold green]✅ {results['summary']}[/bold green]")
+
+    except FileNotFoundError:
+        console.print(f"[red]Portfolio file '{portfolio_file}' not found.[/red]")
+        console.print("[yellow]Expected format: {'positions': [{'ticker': 'AAPL', 'shares': 100, 'price_bought': 150.00}]}[/yellow]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(1)
+
+
+def display_analysis_summary(report: Dict[str, Any]):
+    """Display analysis completion summary with error reporting."""
+    # Count successful vs failed analyses
+    total_tickers = 0
+    successful_tickers = 0
+    failed_tickers = []
+
+    for ticker, analysis in report.get("detailed_stock_analysis", {}).items():
+        total_tickers += 1
+        if "error" in analysis:
+            failed_tickers.append(ticker)
+        else:
+            successful_tickers += 1
+
+    # Display summary
+    if failed_tickers:
+        console.print(Panel(
+            f"[bold yellow]⚠️  Analysis Summary[/bold yellow]\n\n"
+            f"✅ Successful: {successful_tickers}/{total_tickers} stocks\n"
+            f"❌ Failed: {len(failed_tickers)} stocks\n"
+            f"📛 Failed tickers: {', '.join(failed_tickers)}\n\n"
+            f"[dim]Continuing with partial results...[/dim]",
+            title="Analysis Status",
+            border_style="yellow"
+        ))
+    else:
+        console.print(Panel(
+            f"[bold green]✅ Analysis Summary[/bold green]\n\n"
+            f"Successfully analyzed all {total_tickers} stocks!\n"
+            f"📊 Ready for trading recommendations",
+            title="Analysis Complete",
+            border_style="green"
+        ))
+
+
+def display_portfolio_summary(report: Dict[str, Any]):
+    """Display portfolio summary report."""
+    summary = report["portfolio_summary"]
+    risk = report["risk_assessment"]
+    actions = report["action_summary"]
+
+    # Portfolio Overview
+    console.print(Panel(
+        f"[bold green]📊 Portfolio: {summary['name']}[/bold green]\n\n"
+        f"💰 Total Value: ${summary['total_value']:,.2f}\n"
+        f"💵 Cash: ${summary['cash_available']:,.2f} ({risk['cash_percentage']:.1f}%)\n"
+        f"📈 Invested: ${summary['invested_value']:,.2f}\n"
+        f"📦 Positions: {summary['num_positions']} stocks\n"
+        f"👁️  Watchlist: {summary['num_watchlist']} stocks\n\n"
+        f"⚠️  Risk Score: {risk['overall_risk_score']:.1f}/10",
+        title="Portfolio Summary",
+        border_style="green"
+    ))
+
+    # Risk Alerts
+    if risk["risk_alerts"]:
+        alerts_text = "\n".join([f"• {alert}" for alert in risk["risk_alerts"][:5]])
+        console.print(Panel(
+            alerts_text,
+            title="⚠️  Risk Alerts",
+            border_style="yellow"
+        ))
+
+    # Action Summary
+    if actions["total_actions"] > 0:
+        action_text = f"[bold]Total Actions: {actions['total_actions']}[/bold]\n"
+        action_text += f"High Priority: {actions['high_priority']}\n\n"
+
+        for i, action in enumerate(actions["actions"][:5], 1):
+            action_text += f"{i}. {action['ticker']}: {action['action']} {action['shares']} shares\n"
+            action_text += f"   {action['reasoning'][:60]}...\n\n"
+
+        console.print(Panel(
+            action_text,
+            title="💡 Priority Actions",
+            border_style="blue"
+        ))
+
+
+def display_portfolio_detailed(report: Dict[str, Any]):
+    """Display detailed portfolio analysis report."""
+    # Show summary first
+    display_portfolio_summary(report)
+
+    # Position Analysis
+    if report["position_analysis"]:
+        console.print("\n")
+        positions_table = Table(title="📈 Position Analysis & Recommendations")
+        positions_table.add_column("Ticker", style="cyan")
+        positions_table.add_column("Shares", justify="right")
+        positions_table.add_column("Value", justify="right")
+        positions_table.add_column("Weight", justify="right")
+        positions_table.add_column("P&L%", justify="right")
+        positions_table.add_column("Recommendation", style="bold")
+
+        for pos in report["position_analysis"]:
+            # Check if this position had analysis errors
+            ticker = pos["ticker"]
+            analysis = report.get("detailed_stock_analysis", {}).get(ticker, {})
+            has_error = "error" in analysis
+
+            if has_error:
+                # Show error status for failed analyses
+                positions_table.add_row(
+                    f"[red]{ticker}[/red]",
+                    str(pos["current_shares"]),
+                    f"${pos['current_value']:,.0f}",
+                    f"{pos['weight_pct']:.1f}%",
+                    f"[red]N/A (Error)[/red]",
+                    "[yellow]HOLD (Error)[/yellow]"
+                )
+            else:
+                # Normal display for successful analyses
+                pnl_style = "green" if pos["pnl_pct"] > 0 else "red"
+                action_style = "red" if pos["action"] == "SELL" else "green" if pos["action"] in ["BUY", "ADD"] else "yellow"
+
+                positions_table.add_row(
+                    pos["ticker"],
+                    str(pos["current_shares"]),
+                    f"${pos['current_value']:,.0f}",
+                    f"{pos['weight_pct']:.1f}%",
+                    f"[{pnl_style}]{pos['pnl_pct']:+.1f}%[/{pnl_style}]",
+                    f"[{action_style}]{pos['action']}[/{action_style}]"
+                )
+
+        console.print(positions_table)
+
+    # Watchlist Opportunities
+    if report["watchlist_opportunities"]:
+        console.print("\n")
+        watchlist_table = Table(title="🎯 New Opportunities (Watchlist)")
+        watchlist_table.add_column("Ticker", style="cyan")
+        watchlist_table.add_column("Price", justify="right")
+        watchlist_table.add_column("Target%", justify="right")
+        watchlist_table.add_column("Shares", justify="right")
+        watchlist_table.add_column("Cost", justify="right")
+        watchlist_table.add_column("Decision", style="bold")
+
+        for item in report["watchlist_opportunities"]:
+            decision_style = "green" if item["agent_decision"] == "BUY" else "yellow"
+
+            watchlist_table.add_row(
+                item["ticker"],
+                f"${item['current_price']:.2f}",
+                f"{item['target_allocation_pct']:.1f}%",
+                str(item["recommended_shares"]),
+                f"${item['estimated_cost']:,.0f}",
+                f"[{decision_style}]{item['agent_decision']}[/{decision_style}]"
+            )
+
+        console.print(watchlist_table)
+
+    # Sector Allocation
+    console.print("\n")
+    sector_table = Table(title="🏭 Sector Allocation")
+    sector_table.add_column("Sector", style="cyan")
+    sector_table.add_column("Allocation", justify="right")
+
+    for sector, allocation in report["risk_assessment"]["sector_allocations"].items():
+        color = "red" if allocation > 40 else "yellow" if allocation > 25 else "green"
+        sector_table.add_row(sector, f"[{color}]{allocation:.1f}%[/{color}]")
+
+    console.print(sector_table)
+
+    console.print(f"\n[dim]Report generated: {report['report_date']}[/dim]")
 
 
 if __name__ == "__main__":

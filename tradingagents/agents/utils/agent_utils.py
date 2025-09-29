@@ -13,6 +13,18 @@ from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
 from tradingagents.default_config import DEFAULT_CONFIG
 from langchain_core.messages import HumanMessage
+from tradingagents.bedrock_news_tools import (
+    get_stock_news_bedrock,
+    get_global_news_bedrock,
+    get_fundamentals_bedrock
+)
+from tradingagents.live_data_fetchers import live_finnhub, live_reddit
+from tradingagents.dataflows.talib_utils import (
+    get_technical_analysis_report,
+    get_candlestick_patterns_report,
+    get_support_resistance_report,
+    get_fibonacci_levels_report
+)
 
 
 def create_msg_delete():
@@ -361,59 +373,291 @@ class Toolkit:
 
         return google_news_results
 
+
     @staticmethod
     @tool
-    def get_stock_news_openai(
+    def get_stock_news_bedrock(
         ticker: Annotated[str, "the company's ticker"],
         curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     ):
         """
-        Retrieve the latest news about a given stock by using OpenAI's news API.
+        Retrieve and analyze the latest social media sentiment for a given stock using Bedrock Claude.
         Args:
             ticker (str): Ticker of a company. e.g. AAPL, TSM
             curr_date (str): Current date in yyyy-mm-dd format
         Returns:
-            str: A formatted string containing the latest news about the company on the given date.
+            str: A formatted analysis of social media sentiment and discussions about the company.
         """
 
-        openai_news_results = interface.get_stock_news_openai(ticker, curr_date)
-
-        return openai_news_results
+        bedrock_news_results = get_stock_news_bedrock(ticker, curr_date)
+        return bedrock_news_results
 
     @staticmethod
     @tool
-    def get_global_news_openai(
+    def get_global_news_bedrock(
         curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     ):
         """
-        Retrieve the latest macroeconomics news on a given date using OpenAI's macroeconomics news API.
+        Retrieve and analyze the latest global macroeconomic news using Bedrock Claude.
         Args:
             curr_date (str): Current date in yyyy-mm-dd format
         Returns:
-            str: A formatted string containing the latest macroeconomic news on the given date.
+            str: A formatted analysis of global macroeconomic news and trends.
         """
 
-        openai_news_results = interface.get_global_news_openai(curr_date)
-
-        return openai_news_results
+        bedrock_news_results = get_global_news_bedrock(curr_date)
+        return bedrock_news_results
 
     @staticmethod
     @tool
-    def get_fundamentals_openai(
+    def get_fundamentals_bedrock(
         ticker: Annotated[str, "the company's ticker"],
         curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     ):
         """
-        Retrieve the latest fundamental information about a given stock on a given date by using OpenAI's news API.
+        Retrieve and analyze fundamental information about a given stock using Bedrock Claude.
         Args:
             ticker (str): Ticker of a company. e.g. AAPL, TSM
             curr_date (str): Current date in yyyy-mm-dd format
         Returns:
-            str: A formatted string containing the latest fundamental information about the company on the given date.
+            str: A comprehensive fundamental analysis of the company.
         """
 
-        openai_fundamentals_results = interface.get_fundamentals_openai(
-            ticker, curr_date
-        )
+        bedrock_fundamentals_results = get_fundamentals_bedrock(ticker, curr_date)
+        return bedrock_fundamentals_results
 
-        return openai_fundamentals_results
+    @staticmethod
+    @tool
+    def get_finnhub_news_live(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+        look_back_days: Annotated[int, "how many days to look back"] = 7,
+    ):
+        """
+        Retrieve live news about a company from Finnhub API.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date in yyyy-mm-dd format
+            look_back_days (int): how many days to look back, default is 7
+        Returns:
+            str: formatted news articles from Finnhub
+        """
+        from datetime import datetime, timedelta
+
+        end_date = curr_date
+        start_date_dt = datetime.strptime(curr_date, "%Y-%m-%d") - timedelta(days=look_back_days)
+        start_date = start_date_dt.strftime("%Y-%m-%d")
+
+        result = live_finnhub.get_company_news(ticker, start_date, end_date)
+        return result
+
+    @staticmethod
+    @tool
+    def get_finnhub_insider_transactions_live(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+        look_back_days: Annotated[int, "how many days to look back"] = 30,
+    ):
+        """
+        Retrieve live insider transactions from Finnhub API.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date in yyyy-mm-dd format
+            look_back_days (int): how many days to look back, default is 30
+        Returns:
+            str: formatted insider transaction data from Finnhub
+        """
+        from datetime import datetime, timedelta
+
+        end_date = curr_date
+        start_date_dt = datetime.strptime(curr_date, "%Y-%m-%d") - timedelta(days=look_back_days)
+        start_date = start_date_dt.strftime("%Y-%m-%d")
+
+        result = live_finnhub.get_insider_transactions(ticker, start_date, end_date)
+        return result
+
+    @staticmethod
+    @tool
+    def get_reddit_stock_discussions_live(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+        days_back: Annotated[int, "how many days to look back"] = 7,
+    ):
+        """
+        Retrieve live Reddit discussions about a specific stock.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date in yyyy-mm-dd format (for reference)
+            days_back (int): how many days to look back, default is 7
+        Returns:
+            str: formatted Reddit discussions about the stock
+        """
+        result = live_reddit.get_stock_discussions(ticker, days_back)
+        return result
+
+    @staticmethod
+    @tool
+    def get_reddit_market_sentiment_live(
+        curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+        days_back: Annotated[int, "how many days to look back"] = 7,
+    ):
+        """
+        Retrieve live Reddit market sentiment and discussions.
+        Args:
+            curr_date (str): current date in yyyy-mm-dd format (for reference)
+            days_back (int): how many days to look back, default is 7
+        Returns:
+            str: formatted Reddit market sentiment and discussions
+        """
+        result = live_reddit.get_market_sentiment(days_back)
+        return result
+
+    @staticmethod
+    @tool
+    def get_finnhub_real_time_quote(
+        ticker: Annotated[str, "ticker symbol for the company"],
+    ):
+        """
+        Get real-time stock quote data from Finnhub.
+        Args:
+            ticker (str): ticker symbol of the company
+        Returns:
+            str: formatted real-time quote data including current price, changes, highs, lows
+        """
+        result = live_finnhub.get_real_time_quote(ticker)
+        return result
+
+    @staticmethod
+    @tool
+    def get_finnhub_earnings_data(
+        ticker: Annotated[str, "ticker symbol for the company"],
+    ):
+        """
+        Get earnings data and estimates from Finnhub.
+        Args:
+            ticker (str): ticker symbol of the company
+        Returns:
+            str: formatted earnings data including recent earnings and upcoming earnings calendar
+        """
+        result = live_finnhub.get_earnings_data(ticker)
+        return result
+
+    @staticmethod
+    @tool
+    def get_finnhub_analyst_recommendations(
+        ticker: Annotated[str, "ticker symbol for the company"],
+    ):
+        """
+        Get analyst recommendations from Finnhub.
+        Args:
+            ticker (str): ticker symbol of the company
+        Returns:
+            str: formatted analyst recommendations including buy/hold/sell ratings
+        """
+        result = live_finnhub.get_analyst_recommendations(ticker)
+        return result
+
+    @staticmethod
+    @tool
+    def get_finnhub_market_indicators(
+    ):
+        """
+        Get general market indicators and major indices.
+        Returns:
+            str: formatted market indicators including S&P 500, Dow Jones, NASDAQ, and VIX
+        """
+        result = live_finnhub.get_market_indicators()
+        return result
+
+    @staticmethod
+    @tool
+    def get_finnhub_sector_performance(
+    ):
+        """
+        Get sector performance data using sector ETFs.
+        Returns:
+            str: formatted sector performance data across major market sectors
+        """
+        result = live_finnhub.get_sector_performance()
+        return result
+
+
+    @staticmethod
+    @tool
+    def get_technical_analysis_report_online(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "current date for analysis, yyyy-mm-dd"],
+        lookback_days: Annotated[int, "days of data to analyze"] = 100,
+    ):
+        """
+        Generate comprehensive technical analysis report using live data including candlestick patterns,
+        support/resistance levels, Fibonacci analysis, and trading signals.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date for analysis, yyyy-mm-dd
+            lookback_days (int): days of historical data to analyze, default 100
+        Returns:
+            str: comprehensive technical analysis report with patterns, levels, and signals
+        """
+        result = get_technical_analysis_report(ticker, curr_date, lookback_days, True)
+        return result
+
+
+    @staticmethod
+    @tool
+    def get_candlestick_patterns_online(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "current date for analysis, yyyy-mm-dd"],
+        lookback_days: Annotated[int, "days of data for pattern analysis"] = 30,
+    ):
+        """
+        Detect and analyze candlestick patterns using live data for reversal and continuation signals.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date for analysis, yyyy-mm-dd
+            lookback_days (int): days of data for pattern analysis, default 30
+        Returns:
+            str: candlestick pattern analysis with pattern types, reliability, and implications
+        """
+        result = get_candlestick_patterns_report(ticker, curr_date, lookback_days, True)
+        return result
+
+
+    @staticmethod
+    @tool
+    def get_support_resistance_online(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "current date for analysis, yyyy-mm-dd"],
+        lookback_days: Annotated[int, "days for level calculation"] = 50,
+    ):
+        """
+        Calculate dynamic support and resistance levels using live data with trading implications.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date for analysis, yyyy-mm-dd
+            lookback_days (int): days of data for level calculation, default 50
+        Returns:
+            str: support and resistance analysis with levels, distances, and trading implications
+        """
+        result = get_support_resistance_report(ticker, curr_date, lookback_days, True)
+        return result
+
+
+    @staticmethod
+    @tool
+    def get_fibonacci_analysis_online(
+        ticker: Annotated[str, "ticker symbol for the company"],
+        curr_date: Annotated[str, "current date for analysis, yyyy-mm-dd"],
+        trend_window: Annotated[int, "days to determine trend extremes"] = 50,
+    ):
+        """
+        Calculate Fibonacci retracement levels using live data and identify key price zones.
+        Args:
+            ticker (str): ticker symbol of the company
+            curr_date (str): current date for analysis, yyyy-mm-dd
+            trend_window (int): days to determine trend high/low points, default 50
+        Returns:
+            str: Fibonacci retracement analysis with key levels and nearby zones
+        """
+        result = get_fibonacci_levels_report(ticker, curr_date, trend_window, True)
+        return result
